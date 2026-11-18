@@ -1,7 +1,8 @@
 import { LockOutlined, UserOutlined } from '@ant-design/icons';
-import { Form, Input, Modal } from 'antd';
+import { Alert, Form, Input, Modal } from 'antd';
+import { useState } from 'react';
 
-import { DEFAULT_SESSION } from './auth';
+import { ApiError, login } from './api';
 import type { AuthSession } from './types';
 
 interface AuthModalProps {
@@ -20,8 +21,26 @@ export function AuthModal({
   onCancel,
   onSuccess,
 }: AuthModalProps) {
-  function submit() {
-    onSuccess(DEFAULT_SESSION);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit({ username, password }: AuthFormValues) {
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      onSuccess(await login(username.trim(), password));
+    } catch (reason) {
+      setError(reason instanceof ApiError ? reason.message : '登录失败，请稍后重试');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function cancel() {
+    if (submitting) return;
+    setError(null);
+    onCancel();
   }
 
   return (
@@ -30,7 +49,10 @@ export function AuthModal({
       title={null}
       footer={null}
       width={420}
-      onCancel={onCancel}
+      onCancel={cancel}
+      closable={!submitting}
+      keyboard={!submitting}
+      maskClosable={!submitting}
       destroyOnHidden
       centered
     >
@@ -40,26 +62,28 @@ export function AuthModal({
       </div>
       <Form<AuthFormValues>
         layout="vertical"
-        initialValues={{ username: 'heima', password: '123456' }}
         onFinish={submit}
         requiredMark={false}
+        preserve={false}
+        disabled={submitting}
       >
+        {error && <Alert showIcon type="error" message={error} />}
         <Form.Item
-          label="用户名"
+          label="用户名或邮箱"
           name="username"
-          rules={[{ required: true, message: '请输入用户名' }]}
+          rules={[{ required: true, whitespace: true, message: '请输入用户名或邮箱' }]}
         >
-          <Input prefix={<UserOutlined />} size="large" readOnly />
+          <Input prefix={<UserOutlined />} size="large" autoComplete="username" />
         </Form.Item>
         <Form.Item
           label="密码"
           name="password"
-          rules={[{ required: true, min: 6, message: '密码至少需要 6 位' }]}
+          rules={[{ required: true, message: '请输入密码' }]}
         >
-          <Input.Password prefix={<LockOutlined />} size="large" readOnly />
+          <Input.Password prefix={<LockOutlined />} size="large" autoComplete="current-password" />
         </Form.Item>
-        <button className="auth-submit" type="submit">
-          登录
+        <button className="auth-submit" type="submit" disabled={submitting}>
+          {submitting ? '登录中…' : '登录'}
         </button>
       </Form>
     </Modal>

@@ -1,6 +1,9 @@
+from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .exceptions import ChatThreadNotFound
 from .models import ChatThread
 
 
@@ -30,11 +33,13 @@ class ChatThreadRepository:
         # 删除会话
         await self.session.delete(chat_thread)
 
-    async def required_owner(self, user_id: int, id: str) -> ChatThread:
-        """校验指定会话是否属于指定用户"""
+    async def require_owned(self, user_id: int, thread_id: UUID) -> ChatThread:
+        """查询当前用户的会话，未命中时统一返回会话不存在。"""
 
-        return await self.session.scalar(
-            # SELECT * FROM chat_threads WHERE user_id = 1 AND id = '32'
+        thread = await self.session.scalar(
             select(ChatThread)
-            .where(ChatThread.id == id, ChatThread.user_id == user_id)
+            .where(ChatThread.id == thread_id, ChatThread.user_id == user_id)
         )
+        if thread is None:
+            raise ChatThreadNotFound()
+        return thread

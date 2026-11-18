@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import Field, computed_field, PostgresDsn
+from pydantic import Field, PostgresDsn, SecretStr, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 以当前文件为基准，找向上2级的父目录，也就是项目的根目录
@@ -41,7 +41,8 @@ class DatabaseSettings(EnvSettings):
             host=self.host,
             port=self.port,
             username=self.user,
-            password=self.password
+            password=self.password,
+            path=self.name,
         ).encoded_string()
 
     @computed_field
@@ -67,6 +68,22 @@ class LoggingSettings(EnvSettings):
     """日志相关配置"""
     level: str = Field(alias="LOGGING_LEVEL", default="INFO") # 可选值：DEBUG、INFO、WARNING、ERROR、CRITICAL
 
+class AuthSettings(EnvSettings):
+    """后台签发访问令牌所需的配置。"""
+
+    model_config = SettingsConfigDict(hide_input_in_errors=True)
+    jwt_secret: SecretStr = Field(alias="AUTH_JWT_SECRET")
+    access_token_ttl_minutes: int = Field(
+        alias="AUTH_ACCESS_TOKEN_TTL_MINUTES", default=30, ge=1, le=1440
+    )
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def validate_jwt_secret(cls, value: SecretStr) -> SecretStr:
+        if len(value.get_secret_value().strip().encode("utf-8")) < 32:
+            raise ValueError("AUTH_JWT_SECRET must have at least 32 bytes")
+        return value
+
 class RAGSettings(EnvSettings):
     """RAG相关配置"""
     mineru_token: str = Field(alias="MINERU_TOKEN")
@@ -80,6 +97,7 @@ class RAGSettings(EnvSettings):
 
 class Settings(BaseSettings):
     app: AppSettings = Field(default_factory=AppSettings)
+    auth: AuthSettings = Field(default_factory=AuthSettings)
     db: DatabaseSettings = Field(default_factory=DatabaseSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)

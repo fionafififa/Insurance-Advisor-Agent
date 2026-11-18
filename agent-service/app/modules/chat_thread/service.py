@@ -4,7 +4,6 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph.state import CompiledStateGraph
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .exceptions import ChatThreadNotFound
 from .repository import ChatThreadRepository
 from .models import ChatThread
 from .schemas import ChatHistoryResponse, ChatMessageResponse
@@ -29,24 +28,19 @@ class ChatThreadService:
     async def list_by_user(self, user_id: int):
         return await self.repository.list_by_user_id(user_id)
 
-    async def remove(self, user_id: int, id: str):
+    async def remove(self, user_id: int, thread_id: UUID):
         async with self.session.begin():
             # 1.查询会话，校验会话是否属于当前用户
-            chat_thread = await self.repository.required_owner(user_id, id)
-            if not chat_thread:
-                raise ChatThreadNotFound()
+            chat_thread = await self.repository.require_owned(user_id, thread_id)
             # 2.删除会话的历史消息（State的所有的快照）
-            await self.agent.checkpointer.adelete_thread(id)
+            await self.agent.checkpointer.adelete_thread(str(thread_id))
             # 3.删除会话
             await self.repository.delete(chat_thread)
 
-    async def rename(self, user_id: int , id: str, title: str):
+    async def rename(self, user_id: int, thread_id: UUID, title: str):
         async with self.session.begin():
             # 1.查询会话，校验会话是否属于当前用户
-            chat_thread = await self.repository.required_owner(user_id, id)
-            if not chat_thread:
-                # raise: 就是指扔出去一个异常，代码会立刻终止，结束运行，把异常扔给调用者
-                raise ChatThreadNotFound()
+            chat_thread = await self.repository.require_owned(user_id, thread_id)
             # 2.修改标题
             chat_thread.title = title
             # 3.刷新数据
@@ -55,14 +49,11 @@ class ChatThreadService:
             # 4.返回
             return chat_thread
 
-    async def get_chat_history(self, user_id: int, thread_id: str):
+    async def get_chat_history(self, user_id: int, thread_id: UUID):
         # 1.校验当前会话是否属于当前用户
-        chat_thread = await self.repository.required_owner(user_id, thread_id)
-        if not chat_thread:
-            # raise: 就是指扔出去一个异常，代码会立刻终止，结束运行，把异常扔给调用者
-            raise ChatThreadNotFound()
+        await self.repository.require_owned(user_id, thread_id)
         # 2.查询会话历史
-        config = {"configurable": {"thread_id": thread_id}}
+        config = {"configurable": {"thread_id": str(thread_id)}}
         state_snapshot = await self.agent.aget_state(config)
 
         # 3.封装历史消息

@@ -2,12 +2,13 @@
 
 React + Ant Design 保险商城和智能客服前端。
 
-当前状态：M0 最小启动骨架。
-
 ## 本地运行
 
+在 `frontend` 目录执行以下命令。
+
 ```powershell
-docker compose up frontend --build
+npm ci
+npm run dev
 ```
 
 访问：
@@ -15,6 +16,8 @@ docker compose up frontend --build
 ```text
 http://localhost:5173
 ```
+
+公开产品可直接浏览。使用智能顾问时，在商城登录窗口输入已创建的用户名或邮箱和密码。后端账号配置见[项目说明](../README.md#登录与会话)。
 
 ## 后端地址配置
 

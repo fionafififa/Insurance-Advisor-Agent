@@ -1,4 +1,5 @@
 import type {
+  AuthSession,
   ChatHistory,
   ChatThread,
   InsuranceCategory,
@@ -18,39 +19,20 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...init?.headers,
-    },
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => null);
-    throw new ApiError(error?.message ?? '请求失败，请稍后重试', response.status);
-  }
-  return response.json() as Promise<T>;
-}
-
-async function authorizedBusinessRequest<T>(
+async function request<T>(
   path: string,
-  userId: number,
-  init?: RequestInit,
+  { accessToken, headers: initialHeaders, ...init }: RequestInit & { accessToken?: string } = {},
 ): Promise<T> {
+  const headers = new Headers(initialHeaders);
+  headers.set('Content-Type', 'application/json');
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-user-id': String(userId),
-      ...init?.headers,
-    },
+    headers,
   });
   if (!response.ok) {
-    const error = await response.json().catch(() => null);
-    throw new ApiError(error?.message ?? '璇锋眰澶辫触锛岃绋嶅悗閲嶈瘯', response.status);
+    throw await readApiError(response, '请求失败，请稍后重试');
   }
   if (response.status === 204) {
     return undefined as T;
@@ -58,27 +40,38 @@ async function authorizedBusinessRequest<T>(
   return response.json() as Promise<T>;
 }
 
-async function agentRequest<T>(
-  path: string,
-  userId: number,
-  init?: RequestInit,
-): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      'x-user-id': String(userId),
-      ...init?.headers,
-    },
+async function readApiError(response: Response, fallback: string): Promise<ApiError> {
+  const body = await response.json().catch(() => null);
+  const message = typeof body?.detail === 'string' ? body.detail : body?.message;
+  return new ApiError(typeof message === 'string' ? message : fallback, response.status);
+}
+
+interface LoginResponse {
+  access_token: string;
+  user: Omit<AuthSession['user'], 'displayName'> & {
+    display_name?: string | null;
+    displayName?: string | null;
+  };
+}
+
+export async function login(username: string, password: string): Promise<AuthSession> {
+  const result = await request<LoginResponse>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
   });
-  if (!response.ok) {
-    const error = await response.json().catch(() => null);
-    throw new ApiError(error?.detail ?? error?.message ?? '请求失败，请稍后重试', response.status);
+  if (!result?.access_token || !result.user) {
+    throw new ApiError('登录响应缺少会话信息，请稍后重试', 502);
   }
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  return response.json() as Promise<T>;
+  const { user } = result;
+  return {
+    accessToken: result.access_token,
+    user: {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      displayName: user.display_name ?? user.displayName ?? null,
+    },
+  };
 }
 
 export function listProducts(
@@ -94,58 +87,60 @@ export function listProducts(
 }
 
 export function markPlanItemInsured(
-  userId: number,
+  accessToken: string,
   planId: string,
   itemId: string,
 ): Promise<unknown> {
-  return authorizedBusinessRequest<unknown>(
+  return request<unknown>(
     `/insurance-plans/${encodeURIComponent(planId)}/items/${encodeURIComponent(itemId)}/insured`,
-    userId,
-    { method: 'PATCH' },
+    { accessToken, method: 'PATCH' },
   );
 }
 
-export function getInsurancePlan(userId: number, planId: string): Promise<unknown> {
-  return authorizedBusinessRequest<unknown>(
+export function getInsurancePlan(accessToken: string, planId: string): Promise<unknown> {
+  return request<unknown>(
     `/insurance-plans/${encodeURIComponent(planId)}`,
-    userId,
+    { accessToken },
   );
 }
 
-export function listChatThreads(userId: number): Promise<ChatThread[]> {
-  return agentRequest<ChatThread[]>('/chat-threads', userId);
+export function listChatThreads(accessToken: string): Promise<ChatThread[]> {
+  return request<ChatThread[]>('/chat-threads', { accessToken });
 }
 
-export function createChatThread(userId: number, title = '保险咨询'): Promise<ChatThread> {
-  return agentRequest<ChatThread>('/chat-threads', userId, {
+export function createChatThread(accessToken: string, title = '保险咨询'): Promise<ChatThread> {
+  return request<ChatThread>('/chat-threads', {
+    accessToken,
     method: 'POST',
     body: JSON.stringify({ title }),
   });
 }
 
-export function getChatHistory(userId: number, threadId: string): Promise<ChatHistory> {
-  return agentRequest<ChatHistory>(`/chat-threads/${threadId}/messages`, userId);
+export function getChatHistory(accessToken: string, threadId: string): Promise<ChatHistory> {
+  return request<ChatHistory>(`/chat-threads/${threadId}/messages`, { accessToken });
 }
 
 export function renameChatThread(
-  userId: number,
+  accessToken: string,
   threadId: string,
   title: string,
 ): Promise<ChatThread> {
-  return agentRequest<ChatThread>(`/chat-threads/${threadId}`, userId, {
+  return request<ChatThread>(`/chat-threads/${threadId}`, {
+    accessToken,
     method: 'PATCH',
     body: JSON.stringify({ title }),
   });
 }
 
-export async function deleteChatThread(userId: number, threadId: string): Promise<void> {
-  await agentRequest<void>(`/chat-threads/${threadId}`, userId, {
+export async function deleteChatThread(accessToken: string, threadId: string): Promise<void> {
+  await request<void>(`/chat-threads/${threadId}`, {
+    accessToken,
     method: 'DELETE',
   });
 }
 
 export async function streamChat(
-  userId: number,
+  accessToken: string,
   threadId: string,
   input: { message?: string; decision?: Record<string, unknown> },
   handlers: {
@@ -158,13 +153,12 @@ export async function streamChat(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-user-id': String(userId),
+      Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify({ thread_id: threadId, ...input }),
   });
   if (!response.ok || !response.body) {
-    const error = await response.json().catch(() => null);
-    throw new ApiError(error?.detail ?? error?.message ?? '消息发送失败，请稍后重试', response.status);
+    throw await readApiError(response, '消息发送失败，请稍后重试');
   }
 
   const reader = response.body.getReader();

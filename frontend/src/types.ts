@@ -23,6 +23,7 @@ export interface UserSummary {
 }
 
 export interface AuthSession {
+  accessToken: string;
   user: UserSummary;
 }
 
