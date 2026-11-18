@@ -1,0 +1,21 @@
+# Local credentials and overrides
+.env
+.env.*
+!.env.example
+/deploy/milvus/user.yaml
+
+# Python and frontend build files
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Course material and local RAG inputs
+/08.保险条款/
+/09.拓展资料/
+/学习文档/
+/agent-service/data/
+/agent-service/notebooks/
